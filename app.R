@@ -6,6 +6,7 @@ library(leaflet)
 library(leafpop)
 library(tigris)
 
+mapviewOptions(default=TRUE)
 # ---- Helper Functions ----
 
 # when there's multiple buildings in one block,
@@ -61,7 +62,7 @@ interfaceData <- function(dataset) {
 # ---- Data processing ----
 chicago_data <- read.csv("energy-usage-2010-clean.csv")
 chicago_data[2] <- lapply(chicago_data[2], as.character)
-#chicago_data[is.na(chicago_data)] <- 0
+
 
 cook_county <- blocks(state="IL", county="Cook", year="2010")
 
@@ -135,8 +136,22 @@ ui <- dashboardPage(
                                selectInput("select2", "Select Category", selectionsList),
                                radioButtons("months2", "Gas and Electric Month", c(monthList, "Total"),
                                             selected = "Total"))
+                    ),
+                    fluidRow(
+                        column(12, align="center",
+                               radioButtons("color", "Legend Palette", c("Red", "Blue", "Purple", "Default"),
+                                            inline = TRUE, selected = "Default"))
                     )
-            ) # end tabItem2
+            ), # end tabItem2
+            tabItem(tabName = "t4",
+                    h2("About this project"),
+                    p("This project was made by Valo Mara for CS 424 Spring '21"),
+                    p(),
+                    tagList("All data available from ", a("kaggle", 
+                                                          href="https://www.kaggle.com/chicago/chicago-energy-usage-2010")),
+                    p(),
+                    tagList("All code available on ", a("github", href = "https://github.com/vmara2/cs424p3"))
+            ) # end tabItem4
         ) 
     )
 )
@@ -152,6 +167,20 @@ server <- function(input, output) {
         prepareData(chicago_data, input$community2)
     })
     
+    paletteReactive <- reactive({
+        if(input$color == "Red") {
+            legend_pallete <- c("#fee8c8","#fdbb84","#e34a33")
+        }
+        else if(input$color == "Blue"){
+            legend_pallete <- c("#ece7f2","#a6bddb","#2b8cbe")
+        }
+        else if(input$color == "Purple"){
+            legend_pallete <- c("#e0ecf4","#9ebcda","#8856a7")
+        }
+        else{
+            legend_pallete <- viridis::viridis(3)
+        }
+    })
     # ---- Near West Side View ----
     near_west_side <- prepareData(chicago_data, "Near West Side")
     
@@ -168,7 +197,8 @@ server <- function(input, output) {
                 cat <- paste("THERM.",toupper(input$months),".2010", sep = "")
             }
         }
-
+        
+        mapviewOptions(default=TRUE)
         mapview(chicago, zcol=cat, popup=popupTable(chicago, zcol="BUILDING.TYPE"))@map
     })
     
@@ -192,6 +222,8 @@ server <- function(input, output) {
     ## side 1
     output$comparison1 <- renderLeaflet({
         side1 <- side1Reactive()
+        legend_palette <- paletteReactive()
+        
         chicago <- subset(cook_county, GEOID10 %in% side1$CENSUS.BLOCK)
         chicago <- merge(chicago, side1, by.x = "GEOID10", by.y = "CENSUS.BLOCK")
         
@@ -205,6 +237,7 @@ server <- function(input, output) {
             }
         }
         
+        mapviewOptions(vector.palette = colorRampPalette(legend_palette))
         mapview(chicago, zcol=cat, popup=popupTable(chicago, zcol="BUILDING.TYPE"))@map
     })
     
@@ -231,6 +264,8 @@ server <- function(input, output) {
     ## side 2
     output$comparison2 <- renderLeaflet({
         side2 <- side2Reactive()
+        legend_palette <- paletteReactive()
+        
         chicago <- subset(cook_county, GEOID10 %in% side2$CENSUS.BLOCK)
         chicago <- merge(chicago, side2, by.x = "GEOID10", by.y = "CENSUS.BLOCK")
         
@@ -244,6 +279,7 @@ server <- function(input, output) {
             }
         }
         
+        mapviewOptions(vector.palette = colorRampPalette(legend_palette))
         mapview(chicago, zcol=cat, popup=popupTable(chicago, zcol="BUILDING.TYPE"))@map
     })
     
@@ -266,6 +302,8 @@ server <- function(input, output) {
         side2 <- side2Reactive()
         interfaceData(side2)[4]
     }, width = "100%", striped = TRUE, bordered = TRUE)
+    
+    
 }
 
 # Run the application 
