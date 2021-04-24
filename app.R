@@ -22,7 +22,7 @@ multiples <- function(dataset){
     for(i in 1:nrow(dataset)) {
         if(dataset[i,2] %in% dups$Var1){
             dataset[i,3] = "Multiple"
-            dataset[i, 30:34] <- dataset[i, 30:34] / (dups[dups$Var1 == dataset[i,2],2])
+            dataset[i, 31:34] <- dataset[i, 31:34] / (dups[dups$Var1 == dataset[i,2],2])
         }
     }
     
@@ -66,6 +66,11 @@ chicago_data[2] <- lapply(chicago_data[2], as.character)
 
 cook_county <- blocks(state="IL", county="Cook", year="2010")
 
+merged_chicago <- merge(chicago_data, cook_county[,c(3,5)], by.y="GEOID10", by.x="CENSUS.BLOCK")
+merged_chicago <- merged_chicago[, c(2,1,3:35)]
+
+View(cook_county)
+# below are lists to help with the input groups
 selectionsList <- list("Electricity"="TOTAL.KWH", "Gas"="TOTAL.THERMS",
                        "Building Age"="AVERAGE.BUILDING.AGE", "Building Height"="AVERAGE.STORIES",
                        "Building Type"="BUILDING.TYPE", "Total Population"="TOTAL.POPULATION")
@@ -74,14 +79,16 @@ monthList <- month.name
 names(monthList) <- month.abb
 
 communities <- levels(factor(chicago_data$COMMUNITY.AREA.NAME))
+
+chicago_tracts <- levels(factor(merged_chicago$TRACTCE10))
 # ---- UI ----
 ui <- dashboardPage(
     dashboardHeader(title="CS 424 Project 3"),
     dashboardSidebar(disable = FALSE, collapsed = FALSE,
                      sidebarMenu(
                          menuItem("Near West Side View", tabName = "t1", icon=icon("far fa-arrow-circle-left")),
-                         menuItem("Compare View", tabName = "t2", icon=icon("far fa-columns")),
-                         menuItem("Chicago View", tabName = "t3", icon=icon("far fa-window-maximize")),
+                         menuItem("Block View", tabName = "t2", icon=icon("far fa-columns")),
+                         menuItem("Tract View", tabName = "t3", icon=icon("far fa-columns")),
                          menuItem("About", tabName = "t4", icon=icon("far fa-info"))
                      )
     ),
@@ -143,6 +150,40 @@ ui <- dashboardPage(
                                             inline = TRUE, selected = "Default"))
                     )
             ), # end tabItem2
+            tabItem(tabName = "t3",
+                    fluidRow(
+                        column(1, 
+                               selectInput("tracts1", "Select Tract", chicago_tracts, selected = "833300"),
+                               selectInput("select3", "Select Category", selectionsList),
+                               radioButtons("months3", "Gas and Electric Month", c(monthList, "Total"),
+                                            selected = "Total")),
+                        column(5,
+                               tabBox(title="Side 1 Comparison", width = 12,
+                                      tabPanel("Map", mapviewOutput("comparison3", height = "70vh")),
+                                      tabPanel("E. Plot", plotOutput("eplot3")),
+                                      tabPanel("E. Table", tableOutput("etable3")),
+                                      tabPanel("G. Plot", plotOutput("gplot3")),
+                                      tabPanel("G. Table", tableOutput("gtable3")))
+                        ),
+                        column(5,
+                               tabBox(title="Side 2 Comparison", width = 12,
+                                      tabPanel("Map", mapviewOutput("comparison4", height = "70vh")),
+                                      tabPanel("E. Plot", plotOutput("eplot4")),
+                                      tabPanel("E. Table", tableOutput("etable4")),
+                                      tabPanel("G. Plot", plotOutput("gplot4")),
+                                      tabPanel("G. Table", tableOutput("gtable4")))
+                        ),
+                        column(1, 
+                               selectInput("tracts2", "Select Tract", chicago_tracts),
+                               selectInput("select4", "Select Category", selectionsList),
+                               radioButtons("months4", "Gas and Electric Month", c(monthList, "Total"),
+                                            selected = "Total"))
+                    ),
+                    fluidRow(
+                        column(12, align="center",
+                               radioButtons("color1", "Legend Palette", c("Red", "Blue", "Purple", "Default"),
+                                            inline = TRUE, selected = "Default")))
+            ), # end tabItem3
             tabItem(tabName = "t4",
                     h2("About this project"),
                     p("This project was made by Valo Mara for CS 424 Spring '21"),
@@ -175,6 +216,21 @@ server <- function(input, output) {
             legend_pallete <- c("#ece7f2","#a6bddb","#2b8cbe")
         }
         else if(input$color == "Purple"){
+            legend_pallete <- c("#e0ecf4","#9ebcda","#8856a7")
+        }
+        else{
+            legend_pallete <- viridis::viridis(3)
+        }
+    })
+    
+    paletteReactive1 <- reactive({
+        if(input$color1 == "Red") {
+            legend_pallete <- c("#fee8c8","#fdbb84","#e34a33")
+        }
+        else if(input$color1 == "Blue"){
+            legend_pallete <- c("#ece7f2","#a6bddb","#2b8cbe")
+        }
+        else if(input$color1 == "Purple"){
             legend_pallete <- c("#e0ecf4","#9ebcda","#8856a7")
         }
         else{
@@ -238,7 +294,8 @@ server <- function(input, output) {
         }
         
         mapviewOptions(vector.palette = colorRampPalette(legend_palette))
-        mapview(chicago, zcol=cat, popup=popupTable(chicago, zcol="BUILDING.TYPE"))@map
+        mapview(chicago, zcol=cat, popup=popupTable(chicago, 
+                                                    zcol=c("BUILDING.TYPE","TRACTCE10")))@map
     })
     
     output$eplot1 <- renderPlot({
@@ -280,7 +337,8 @@ server <- function(input, output) {
         }
         
         mapviewOptions(vector.palette = colorRampPalette(legend_palette))
-        mapview(chicago, zcol=cat, popup=popupTable(chicago, zcol="BUILDING.TYPE"))@map
+        mapview(chicago, zcol=cat, popup=popupTable(chicago, 
+                                                    zcol=c("BUILDING.TYPE", "TRACTCE10")))@map
     })
     
     output$eplot2 <- renderPlot({
@@ -303,7 +361,93 @@ server <- function(input, output) {
         interfaceData(side2)[4]
     }, width = "100%", striped = TRUE, bordered = TRUE)
     
+    # ---- Chicago View ----
+    ## side 1
+    output$comparison3 <- renderLeaflet({
+        legend_palette <- paletteReactive1()
+        
+        chicago <- subset(merged_chicago, merged_chicago$TRACTCE10 == input$tracts1)
+        chicago <- multiples(chicago)
+        chicago <- aggregate(.~COMMUNITY.AREA.NAME+CENSUS.BLOCK+BUILDING.TYPE+TRACTCE10
+                             , data=chicago, sum, na.action = na.pass)
+        chicago <- merge(cook_county, chicago, by.x="GEOID10", by.y="CENSUS.BLOCK")
+        
+        cat <- input$select3
+        if(cat == "TOTAL.KWH" | cat == "TOTAL.THERMS"){
+            if(input$months3 != "Total" & cat == "TOTAL.KWH") {
+                cat <- paste("KWH.",toupper(input$months3),".2010", sep = "")
+            }
+            else if(input$months3 != "Total" & cat == "TOTAL.THERMS"){
+                cat <- paste("THERM.",toupper(input$months3),".2010", sep = "")
+            }
+        }
+        
+        mapviewOptions(vector.palette = colorRampPalette(legend_palette))
+        mapView(chicago, zcol=cat, popup=popupTable(chicago, zcol="BUILDING.TYPE"))@map
+    })
     
+    output$eplot3 <- renderPlot({
+        chicago <- subset(merged_chicago, merged_chicago$TRACTCE10 == input$tracts1)
+        interfaceData(chicago)[1]
+    })
+    
+    output$etable3 <- renderTable({
+        chicago <- subset(merged_chicago, merged_chicago$TRACTCE10 == input$tracts1)
+        interfaceData(chicago)[3]
+    }, width = "100%", striped = TRUE, bordered = TRUE)
+    
+    output$gplot3 <- renderPlot({
+        chicago <- subset(merged_chicago, merged_chicago$TRACTCE10 == input$tracts1)
+        interfaceData(chicago)[2]
+    })
+    
+    output$gtable3 <- renderTable({
+        chicago <- subset(merged_chicago, merged_chicago$TRACTCE10 == input$tracts1)
+        interfaceData(chicago)[4]
+    }, width = "100%", striped = TRUE, bordered = TRUE)
+    ## side 2
+    output$comparison4 <- renderLeaflet({
+        legend_palette <- paletteReactive1()
+        
+        chicago <- subset(merged_chicago, merged_chicago$TRACTCE10 == input$tracts2)
+        chicago <- multiples(chicago)
+        chicago <- aggregate(.~COMMUNITY.AREA.NAME+CENSUS.BLOCK+BUILDING.TYPE+TRACTCE10
+                             , data=chicago, sum, na.action = na.pass)
+        chicago <- merge(cook_county, chicago, by.x="GEOID10", by.y="CENSUS.BLOCK")
+        
+        cat <- input$select4
+        if(cat == "TOTAL.KWH" | cat == "TOTAL.THERMS"){
+            if(input$months4 != "Total" & cat == "TOTAL.KWH") {
+                cat <- paste("KWH.",toupper(input$months4),".2010", sep = "")
+            }
+            else if(input$months4 != "Total" & cat == "TOTAL.THERMS"){
+                cat <- paste("THERM.",toupper(input$months4),".2010", sep = "")
+            }
+        }
+        
+        mapviewOptions(vector.palette = colorRampPalette(legend_palette))
+        mapView(chicago, zcol=cat, popup=popupTable(chicago, zcol="BUILDING.TYPE"))@map
+    })
+    
+    output$eplot4 <- renderPlot({
+        chicago <- subset(merged_chicago, merged_chicago$TRACTCE10 == input$tracts2)
+        interfaceData(chicago)[1]
+    })
+    
+    output$etable4 <- renderTable({
+        chicago <- subset(merged_chicago, merged_chicago$TRACTCE10 == input$tracts2)
+        interfaceData(chicago)[3]
+    }, width = "100%", striped = TRUE, bordered = TRUE)
+    
+    output$gplot4 <- renderPlot({
+        chicago <- subset(merged_chicago, merged_chicago$TRACTCE10 == input$tracts2)
+        interfaceData(chicago)[2]
+    })
+    
+    output$gtable4 <- renderTable({
+        chicago <- subset(merged_chicago, merged_chicago$TRACTCE10 == input$tracts2)
+        interfaceData(chicago)[4]
+    }, width = "100%", striped = TRUE, bordered = TRUE)
 }
 
 # Run the application 
