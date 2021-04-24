@@ -1,0 +1,12 @@
+name: cs424p3
+title: cs424p3
+username:
+account: valo-mara
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 4017379
+bundleId: 4507876
+url: https://valo-mara.shinyapps.io/cs424p3/
+when: 1619145659.15227
+asMultiple: FALSE
+asStatic: FALSE
